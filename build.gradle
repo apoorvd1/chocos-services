@@ -17,7 +17,7 @@ allprojects {
 }
 
 jar {
-    baseName = "yoda"
+    baseName = "cofy"
     version = "0.0.1-SNAPSHOT"
 }
 
@@ -42,10 +42,6 @@ task killAllServers {
     }
 }
 
-task backendTests() {
-    setupProfile('integration')
-    dependsOn tasks.getByPath("backend:test")
-}
 
 def setupProfile(activeProfiles) {
     project.subprojects.each { subproject -> subproject.ext.set("activeProfiles", activeProfiles) }
@@ -53,85 +49,15 @@ def setupProfile(activeProfiles) {
 
 task startAllServices() {
     def startBackendTask = tasks.getByPath("backend:startService")
-    def startTranslationServiceTask = tasks.getByPath("translation-service:startService")
 
     dependsOn startBackendTask
-    dependsOn startTranslationServiceTask
-
-    startBackendTask.mustRunAfter startTranslationServiceTask
 }
 
-task startAllClients() {
-    dependsOn tasks.getByPath(":customer-client:minify")
-    dependsOn tasks.getByPath(":customer-client:startWebServer")
-    dependsOn tasks.getByPath(":dealership-client:minify")
-    dependsOn tasks.getByPath(":dealership-client:startWebServer")
-}
 
 task startAllServers() {
     setupProfile(project.properties.get('activeProfiles') ?: 'test')
 
     dependsOn startAllServices
-    dependsOn startAllClients
-}
-
-task configureProtractorTest() {
-    setupProfile('e2e,mock')
-
-    def generateCustomerVersionProperties = tasks.getByPath("customer-client:generateGitProperties")
-    def patchCustomerVersionProperties = tasks.getByPath("customer-client:patchGitProperties")
-    def generateDealershipVersionProperties = tasks.getByPath("dealership-client:generateGitProperties")
-    def patchDealershipVersionProperties = tasks.getByPath("dealership-client:patchGitProperties")
-
-    dependsOn generateCustomerVersionProperties
-    dependsOn patchCustomerVersionProperties
-    dependsOn generateDealershipVersionProperties
-    dependsOn patchDealershipVersionProperties
-    dependsOn tasks.getByPath("customer-client:minify")
-    dependsOn tasks.getByPath("dealership-client:minify")
-    dependsOn startAllServices
-
-    patchDealershipVersionProperties.mustRunAfter generateDealershipVersionProperties
-    patchCustomerVersionProperties.mustRunAfter generateCustomerVersionProperties
-    startAllServices.mustRunAfter patchCustomerVersionProperties
-    startAllServices.mustRunAfter patchDealershipVersionProperties
-}
-
-task e2eTests() {
-    def runProtractor = tasks.getByPath("e2e:runE2EProtractor")
-
-    dependsOn runProtractor
-    dependsOn configureProtractorTest
-
-    runProtractor.mustRunAfter configureProtractorTest
-
-    finalizedBy killAllServers
-}
-
-task externalDependencyTests() {
-    def runProtractor = tasks.getByPath("e2e:runExternalDependencyProtractor")
-
-    dependsOn runProtractor
-    dependsOn configureProtractorTest
-
-    runProtractor.mustRunAfter configureProtractorTest
-
-    finalizedBy killAllServers
-}
-
-task frontendTests() {
-    dependsOn tasks.getByPath("customer-client:unitTest")
-    dependsOn tasks.getByPath("dealership-client:unitTest")
-}
-
-task cleanFrontend() {
-    dependsOn tasks.getByPath("customer-client:envClientUninstall")
-    dependsOn tasks.getByPath("dealership-client:envClientUninstall")
-}
-
-task installFrontend() {
-    dependsOn tasks.getByPath("customer-client:envClientInstall")
-    dependsOn tasks.getByPath("dealership-client:envClientInstall")
 }
 
 task waitForBackend {
@@ -144,101 +70,6 @@ task defineProfiles {
     doFirst {
         project.subprojects.each { subproject ->
             subproject.ext.set("activeProfiles", "default")
-        }
-    }
-}
-
-task defineDealershipSmokeTestUrl {
-    doFirst {
-        project.subprojects.each { subproject ->
-            if (subproject.name == 'smokeTests') {
-                subproject.ext.set('smokeTestsClientBaseUrl', 'http://localhost:9000')
-            }
-        }
-    }
-}
-
-task defineCustomerSmokeTestUrl {
-    doFirst {
-        project.subprojects.each { subproject ->
-            if (subproject.name == 'smokeTests') {
-                subproject.ext.set('smokeTestsClientBaseUrl', 'http://localhost:8080')
-            }
-        }
-    }
-}
-
-task smokeTestDealershipClientLocal {
-    def smokeTestsDealershipClientTask = tasks.getByPath(':smokeTests:smokeTestClient')
-
-    dependsOn defineProfiles
-    dependsOn defineDealershipSmokeTestUrl
-    dependsOn startAllServers
-    dependsOn waitForBackend
-    dependsOn smokeTestsDealershipClientTask
-
-    startAllServers.mustRunAfter defineProfiles
-    smokeTestsDealershipClientTask.mustRunAfter waitForBackend
-
-    finalizedBy killAllServers
-}
-
-task smokeTestCustomerClientLocal {
-    def smokeTestsCustomerClientTask = tasks.getByPath(':smokeTests:smokeTestClient')
-
-    dependsOn defineProfiles
-    dependsOn defineCustomerSmokeTestUrl
-    dependsOn startAllServers
-    dependsOn waitForBackend
-    dependsOn smokeTestsCustomerClientTask
-
-    startAllServers.mustRunAfter defineProfiles
-    smokeTestsCustomerClientTask.mustRunAfter waitForBackend
-
-    finalizedBy killAllServers
-}
-
-task allSmokeTests() {
-    dependsOn smokeTestDealershipClientLocal
-    dependsOn smokeTestCustomerClientLocal
-}
-
-task allTests() {
-    e2eTests.mustRunAfter frontendTests
-    frontendTests.mustRunAfter backendTests
-
-    dependsOn backendTests, frontendTests, e2eTests
-}
-
-task allLocalTests() {
-    installFrontend.mustRunAfter cleanFrontend
-    allTests.mustRunAfter installFrontend
-    dependsOn cleanFrontend, installFrontend, allTests
-}
-
-allprojects {
-    ext.waitUntilAvailable = { String serviceName, String configServiceUrl ->
-        def timeout = 2
-        def complete = false
-        use(groovy.time.TimeCategory) {
-            def end = new Date() + timeout.minutes
-
-            while (!complete && new Date() < end) {
-                try {
-                    println '***********************************************************************************************************'
-                    println "Waiting for $serviceName to be available..."
-                    configServiceUrl.toURL().text
-                    complete = true
-                    println "$serviceName available!"
-                    println '***********************************************************************************************************'
-                } catch (IOException ignore) {
-                    sleep(5000)
-                }
-            }
-
-            if (!complete) {
-                throw new RuntimeException("Not available: $configServiceUrl")
-            }
         }
     }
 }

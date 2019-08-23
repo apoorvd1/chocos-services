@@ -1,0 +1,31 @@
+@startuml
+title Cofy Home
+'------------------------------------------------------
+'PARTICIPANTS
+'-------------------------------------------------------
+actor User
+box "cofy home"
+participant "cofy home UI" as cofyClient
+participant "cofy home services" as cofyServices
+participant "CAAS" as caas
+participant "cofy db" as db
+participant "Cloud Vault" as cVault
+end box
+
+autonumber
+
+User -> cofyClient: user go to cofy cofyClient
+activate cofyClient
+cofyClient -> cofyServices: **POST /login** \n** Header **\n**<font color=green>correlationId \n**Body**\n**<font color=green>userId \n**<font color=green>password
+cofyServices -> cVault: /getUserCredentials
+cVault --> cofyServices: fetch user keys based on user userId
+note left
+Generate JWT if keys found
+and user authenticate
+end note
+cofyServices -> db : put encrypted details in db(jwt)
+db --> cofyServices : Get JWT
+cofyServices --> cofyClient : authenticate user \n**Response** \n**<font color=green>jwt
+cofyClient --> User: user able to login
+deactivate cofyClient
+@enduml
